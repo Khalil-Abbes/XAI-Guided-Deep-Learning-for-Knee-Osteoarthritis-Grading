@@ -1,1 +1,9 @@
+# Ignore the compressed dataset zip file
+*.zip
 
+# Ignore the entire contents of the top-level data directory
+# This automatically includes your nested /data/data/ folder and folders 0-4
+/data/data/
+
+# EXCEPTION: Do not ignore Python scripts inside the top-level data folder
+!/data/data/*.py
