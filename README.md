@@ -2,6 +2,7 @@
 
 ## Group Members
 * Mohamed Khalil Abbes
+* Amirmahdi Ansaripour
 
 ## Dataset(s) Used
 * **Primary Dataset:** `SilpaCS/kneeosteoarthritis` (Sourced via Hugging Face)
