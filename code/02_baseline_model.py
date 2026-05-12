@@ -147,8 +147,8 @@ for epoch in range(NUM_EPOCHS):
     train_acc = correct / total_samples
     print(f"Epoch {epoch+1}/{NUM_EPOCHS} | Loss: {running_loss/total_samples:.4f} | Acc: {train_acc:.4f}")
 
-torch.save(model.state_dict(), "baseline_resnet50.pth")
-print("Baseline model saved.")
+torch.save(model.state_dict(), "data/baseline_resnet50.pth")
+print("Baseline model saved to data/baseline_resnet50.pth")
 
 # ── Validation ────────────────────────────────────────────────────────────────
 model.eval()
