@@ -14,3 +14,63 @@ Following an email exchange with the course instructor (Mr. Deckarm), I decided 
 
 ### Decision: Narrowing the Scope of Hypothesis 2 (H2)
 Because our newly formed two-person group is still operating under standard capacity and initiating collaboration late in the semester, we requested and received explicit approval from the instructor to narrow our project scope. For Hypothesis 2 (H2), the project brief suggests comparing multiple intervention strategies (e.g., augmentation, loss reweighting, attention regularisation). Instead, we decided to select, implement, and evaluate exactly one primary intervention strategy. Our methodology will focus on rigorously arguing why this single chosen strategy is the most appropriate for correcting the unfaithful predictions identified in Hypothesis 1 (H1). This ensures we maintain a realistic, manageable workload without sacrificing methodological quality.
+
+## KW 20 - 12/05/2026
+
+### Decision: Bypass HuggingFace dataset loading script — use raw zip download instead
+
+The initial approach used `load_dataset("SilpaCS/kneeosteoarthritis")` from the HuggingFace `datasets` library. This call failed immediately with a `DatasetGenerationError` caused by the dataset's own loading script. The standard workaround flags such as `verification_mode` do not help because the error occurs during data generation, not during verification. We therefore switched to downloading the raw `data.zip` file directly via `hf_hub_download()` from the `huggingface_hub` library, which bypasses the broken script entirely. The zip was extracted locally to `data/kneeosteoarthritis/` and is excluded from version control via `.gitignore`. This approach is more robust and does not depend on the dataset maintainer fixing the upstream bug.
+
+### Decision: Manual 80/20 train/validation split with fixed random seed
+
+The dataset contains no pre-made train/test split — all 8,260 images are stored flat in five grade subfolders (`0`–`4`). We collected all samples, shuffled with `random.seed(42)`, and split 80% (6,608 images) for training and 20% (1,652 images) for validation. The fixed seed ensures the split is fully reproducible across machines and team members. We considered using stratified splitting (preserving class ratios per fold) but opted for the simple random split at this baseline stage; stratified splitting will be revisited if class imbalance causes instability in validation metrics.
+
+### Decision: Weighted CrossEntropyLoss to address class imbalance
+
+The class distribution is severely skewed: Grade 0 accounts for 3,253 images (39%) while Grade 4 contains only 251 images (3%). An unweighted loss function would bias the model toward majority classes and make Grade 4 predictions unreliable. We computed per-class weights `[0.51, 1.12, 0.76, 1.52, 6.71]` for grades 0–4 respectively, and passed these to `nn.CrossEntropyLoss(weight=class_weights)`. This is a standard and well-supported technique for imbalanced classification. Alternatives considered were oversampling (SMOTE, duplicate sampling) and undersampling, but weighted loss was preferred as it uses all available data without introducing synthetic samples or discarding real ones.
+
+### Decision: ResNet-50 pretrained on ImageNet as baseline architecture
+
+According to Karaelmas et al. (2024) `https://dergipark.org.tr/tr/download/article-file/3912636`, who benchmark multiple CNN architectures on knee osteoarthritis grading using the same KL grade classification task, ResNet-50 achieves accuracy comparable to higher-complexity models such as EfficientNet and DenseNet while being simpler to work with. We therefore selected ResNet-50 as our baseline: it performs nearly as well as the top alternatives and is directly compatible with gradient-based XAI methods via Captum's GuidedGradCAM, which targets `model.layer4[-1]` — the final convolutional block. This compatibility with GradCAM was the deciding factor over other architectures, as saliency analysis is central to both H1 and H2 of this project.
+
+### Decision: Training configuration — Adam, StepLR, 20 epochs, batch size 64
+
+The optimizer was set to Adam with learning rate 1e-4 and weight decay 1e-4. A StepLR scheduler reduces the learning rate by a factor of 0.5 every 5 epochs, preventing the model from overshooting minima in later training stages. We trained for 20 epochs with batch size 64 on a local NVIDIA GPU. Batch size was set to 64 rather than the default 32 to better utilise available VRAM and reduce training time, with no negative effect on convergence. The final training accuracy was 96.28% with a validation accuracy of 67.49%, indicating significant overfitting (~29 percentage point gap). This is expected at the baseline stage with a small imbalanced dataset and standard augmentation. The overfitting is methodologically useful: a model that has memorised training patterns is more likely to rely on spurious image features, which GuidedGradCAM analysis in H1 is designed to expose. Further epoch extensions were rejected as the bottleneck is overfitting, not underfitting — more epochs improve training accuracy only.
+
+### Decision: Data augmentation — horizontal flip, rotation ±10°, ColorJitter deferred
+
+Training augmentations include random horizontal flip and random rotation of ±10°. These are anatomically plausible for knee X-rays (bilateral symmetry, minor patient positioning variation). Stronger augmentations such as ColorJitter, RandomAffine translation, and RandomVerticalFlip were considered but deferred from the baseline run to keep the initial training controlled and comparable to the reference paper's setup. These will be introduced in the improved model (H2) to test whether reduced overfitting and higher validation accuracy accompany improved saliency faithfulness.
+
+
+### AI Interaction — KW20 — 12.05.2026 — Data loading pipeline (01_data_load.py)
+
+**Task:** Load the `SilpaCS/kneeosteoarthritis` dataset from HuggingFace and build a PyTorch DataLoader pipeline for training.
+
+**Tool:** Perplexity AI (claude.ai / Sonnet 4.6)
+
+**Prompt summary:** Asked how to start coding the project and load the dataset from HuggingFace, providing the full list of installed packages in `ds_env`.
+
+**Output summary:** The AI produced an initial `01_data_load.py` using `load_dataset("SilpaCS/kneeosteoarthritis")` from the `datasets` library, applying HuggingFace transforms and constructing a `collate_fn`-based DataLoader. When the script failed with `DatasetGenerationError: Invalid string class label kneeosteoarthritis@def4c0831fd80df4e0711c3c6590210ba52e7345`, the AI diagnosed the root cause as a bug in the upstream dataset loading script and proposed a replacement approach using `hf_hub_download()` to retrieve the raw zip. A second issue arose because the zip extracts to `data/kneeosteoarthritis/data/0/` rather than having a `train/test` subfolder structure, causing the dataset to load 0 images. The AI identified this from the printed folder structure and provided a further revision that reads directly from the grade subfolders and applies a manual 80/20 split.
+
+**Accepted / rejected / modified:** The final working version was accepted with one modification: `num_workers` was changed from `4` to `0` because Windows multiprocessing via `spawn` requires all DataLoader code to be inside an `if __name__ == '__main__':` guard, which is incompatible with a script run directly. `num_workers=0` is the standard Windows workaround and has negligible performance impact when the GPU is the bottleneck.
+
+**Reasoning:** The AI correctly identified both failure modes and proposed working solutions. The `num_workers` Windows issue was not flagged by the AI in the initial GPU-optimised version and was discovered from the runtime error; the fix was trivial but the decision to apply it is documented here because it affects reproducibility on HPC (where `num_workers=4` will be re-enabled).
+
+**Paper implication:** The methodology section will note that the dataset's HuggingFace loading script contains a bug and that data was loaded via direct zip download, with an 80/20 random split (seed 42) applied manually due to the absence of pre-defined splits.
+
+
+### AI Interaction — KW20 — 12.05.2026 — Baseline model training (02_baseline_model.py)
+
+**Task:** Implement and train a baseline ResNet-50 classifier for 5-class KL grade prediction with class-weighted loss.
+
+**Tool:** Perplexity AI (claude.ai / Sonnet 4.6)
+
+**Prompt summary:** Asked for the full `02_baseline_model.py` integrating the new data loading approach, with the model architecture, class weighting, training loop, scheduler, and validation evaluation, optimised for local NVIDIA GPU training.
+
+**Output summary:** The AI produced a complete training script reusing the `KneeOADataset` class from `01_data_load.py`, building a ResNet-50 with a replaced fully-connected head, computing class weights from the training split counts, and training with Adam + StepLR over 20 epochs. It included `pin_memory=True` and `non_blocking=True` for faster CPU-to-GPU data transfer, and set `batch_size=64` for the GPU. When `num_workers=4` caused the same Windows multiprocessing error as in `01_data_load.py`, the AI confirmed the fix was simply `num_workers=0`.
+
+**Accepted / rejected / modified:** Accepted with `num_workers=0`. The AI also initially suggested that further accuracy gains were possible with more epochs, but after reviewing the 26.5 percentage point train/val gap, the recommendation to keep the baseline as-is and move on to XAI analysis was accepted rather than continuing to tune.
+
+**Reasoning:** The training results (train acc 90.7%, val acc 64.2%) are consistent with expected baseline behaviour on an imbalanced small medical dataset without strong regularisation. The gap is informative rather than problematic at this stage.
+
+**Paper implication:** The methodology section will report the baseline ResNet-50 results as the starting point for H1 XAI analysis, noting the overfitting as motivation for the XAI-guided training intervention in H2.

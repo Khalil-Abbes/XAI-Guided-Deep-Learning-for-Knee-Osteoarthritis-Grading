@@ -2,12 +2,11 @@
 *.zip
 
 # Ignore the entire contents of the top-level data directory
-# This automatically includes your nested /data/data/ folder and folders 0-4
-/data/0/
-/data/1/
-/data/2/
-/data/3/
-/data/4/
+# This automatically includes your nested folders 0-4
+/data/kneeosteoarthritis
 
 # EXCEPTION: Do not ignore Python scripts inside the top-level data folder
 !/data/*.py
+
+# Ignore the entire contents of the ds_env directory
+ds_env/
