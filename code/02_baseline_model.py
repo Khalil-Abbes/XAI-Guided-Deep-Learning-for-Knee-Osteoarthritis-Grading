@@ -28,59 +28,62 @@ class KneeOADataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return {"pixel_values": image, "labels": label}
+      
+    def load_data(self):
+      zip_path = hf_hub_download(
+        repo_id="SilpaCS/kneeosteoarthritis",
+        filename="data.zip",
+        repo_type="dataset"
+      )
+      extract_dir = Path("data/kneeosteoarthritis")
+      extract_dir.mkdir(parents=True, exist_ok=True)
+      if not any(extract_dir.iterdir()):
+          print("Extracting zip...")
+          with zipfile.ZipFile(zip_path, "r") as z:
+              z.extractall(extract_dir)
 
-# ── Load & split data ─────────────────────────────────────────────────────────
-zip_path = hf_hub_download(
-    repo_id="SilpaCS/kneeosteoarthritis",
-    filename="data.zip",
-    repo_type="dataset"
-)
+      data_root = extract_dir / "data"
 
-extract_dir = Path("data/kneeosteoarthritis")
-extract_dir.mkdir(parents=True, exist_ok=True)
-if not any(extract_dir.iterdir()):
-    print("Extracting zip...")
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(extract_dir)
+      all_samples = []
+      for label_folder in sorted(data_root.iterdir()):
+          if not label_folder.is_dir():
+              continue
+          try:
+              label = int(label_folder.name)
+          except ValueError:
+              continue
+          for img_path in label_folder.glob("*.png"):
+              all_samples.append((img_path, label))
+          for img_path in label_folder.glob("*.jpg"):
+              all_samples.append((img_path, label))
 
-data_root = extract_dir / "data"
+      random.seed(42)
+      random.shuffle(all_samples)
+      train_size    = int(0.8 * len(all_samples))
+      train_samples = all_samples[:train_size]
+      val_samples   = all_samples[train_size:]
+      print(f"Train: {len(train_samples)} | Val: {len(val_samples)}")
 
-all_samples = []
-for label_folder in sorted(data_root.iterdir()):
-    if not label_folder.is_dir():
-        continue
-    try:
-        label = int(label_folder.name)
-    except ValueError:
-        continue
-    for img_path in label_folder.glob("*.png"):
-        all_samples.append((img_path, label))
-    for img_path in label_folder.glob("*.jpg"):
-        all_samples.append((img_path, label))
+class Preprocess():
+  def __init__(self):
+    pass
+  
+  def transform(self):
+      train_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225])
+      ])
 
-random.seed(42)
-random.shuffle(all_samples)
-train_size    = int(0.8 * len(all_samples))
-train_samples = all_samples[:train_size]
-val_samples   = all_samples[train_size:]
-print(f"Train: {len(train_samples)} | Val: {len(val_samples)}")
-
-# ── Transforms ────────────────────────────────────────────────────────────────
-train_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(10),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
-
-val_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
+      val_transform = transforms.Compose([
+          transforms.Resize((224, 224)),
+          transforms.ToTensor(),
+          transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                              std=[0.229, 0.224, 0.225])
+      ])
 
 # ── DataLoaders ───────────────────────────────────────────────────────────────
 def collate_fn(batch):
