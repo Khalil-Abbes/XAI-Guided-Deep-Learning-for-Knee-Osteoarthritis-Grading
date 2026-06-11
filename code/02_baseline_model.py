@@ -1,4 +1,15 @@
-# code/02_baseline_model.py
+"""
+02_baseline_model.py
+---------------------
+Trains a ResNet-50 baseline classifier on the Knee OA dataset (5 KL grades).
+Uses ImageNet pre-trained weights, class-weighted cross-entropy loss to handle
+class imbalance, and a StepLR scheduler over 20 epochs.
+
+Outputs:
+  - data/baseline_resnet50.pth       (saved model weights)
+  - Console: per-epoch loss/accuracy and final validation accuracy
+"""
+
 import random
 import zipfile
 from collections import Counter

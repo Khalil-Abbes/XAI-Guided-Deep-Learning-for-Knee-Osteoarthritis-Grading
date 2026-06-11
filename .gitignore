@@ -5,6 +5,8 @@
 # This automatically includes your nested folders 0-4
 /data/kneeosteoarthritis
 /data/baseline_resnet50.pth
+data/xai_analysis/
+data/baseline_resnet50.pth
 
 # EXCEPTION: Do not ignore Python scripts inside the top-level data folder
 !/data/*.py

@@ -74,3 +74,51 @@ Training augmentations include random horizontal flip and random rotation of ±1
 **Reasoning:** The training results (train acc 90.7%, val acc 64.2%) are consistent with expected baseline behaviour on an imbalanced small medical dataset without strong regularisation. The gap is informative rather than problematic at this stage.
 
 **Paper implication:** The methodology section will report the baseline ResNet-50 results as the starting point for H1 XAI analysis, noting the overfitting as motivation for the XAI-guided training intervention in H2.
+
+
+## KW 24 - 11/06/2026
+
+### Decision: Case Selection Procedure for Unfaithful Predictions — Documented by Remaining Member
+
+The second group member had been assigned the Grad-CAM implementation and CbU case selection procedure since KW20 but did not deliver any working code. After repeated lack of progress, they eventually revealed they had dropped the course, leaving the entire XAI analysis pipeline incomplete. As a result, this work was started from scratch by me later. The CbU case selection procedure, which had been agreed upon conceptually earlier, was now formally implemented: a CbU case is defined as a validation image where the model predicts correctly but JSER < 0.40. This threshold sits just above the observed mean JSER, balancing sensitivity without excessive false positives.
+
+### Decision: JSER Region Definition — Two Regions Compared, H-Band Selected
+
+Two JSER region definitions were implemented and compared to determine which better captures anatomical joint-space attention: a Square Centre Crop (rows 56–168, cols 56–168) and an Anatomical H-Band (rows 105–160, full width). The H-Band produced lower variance (std 0.0365 vs 0.0937) and a cleaner per-grade CbU gradient, and was selected as the primary metric. Boundaries were visually validated at four candidate positions before being fixed. The square crop is retained as a secondary comparison.
+
+
+### Decision: Baseline Faithfulness Characterisation Metrics Selected
+
+The following metrics were selected to characterise baseline faithfulness: CbU Rate and Faithfulness Score quantify how often correct predictions are spatially unfaithful; per-class JSER breakdown reveals whether faithfulness degrades with disease severity; and the confidence-faithfulness Pearson correlation tests whether model confidence is a reliable proxy for correct attention. Together these cover global, class-level, and confidence-level dimensions of faithfulness, providing a complete baseline profile against which the XAI-guided model (H2) will be compared.
+
+
+### AI Interaction — KW24 — 11.06.2026 — Grad-CAM pipeline and JSER implementation (03_gradcam_analysis.py)
+
+
+**Task:** Implement Grad-CAM over the full validation set and compute JSER faithfulness metrics across both region definitions.
+
+**Tool:** Perplexity AI (claude.ai / Sonnet 4.6)
+
+**Prompt summary:** Worked through the Grad-CAM pipeline, region design, and unfaithful case detection with AI assistance for structuring parts of the code.
+
+**Output summary:** A combined script running Grad-CAM in a single pass for both JSER variants, saving per-image results to JSON and generating worst-case visualisation figures.
+
+**Accepted / rejected / modified:** Modified. The initial output had an indexing error in the JSER region slicing producing inflated energy ratios, and the visualisation figures initially lacked per-image JSER bar chart panels. Both were corrected. Region boundaries were also adjusted independently from 84–140 to 105–160 based on visual validation.
+
+**Paper implication:** Methodology will describe both JSER variants, justify H-Band selection, and report the 105–160 boundary as visually validated.
+
+
+### AI Interaction — KW24 — 11.06.2026 — Baseline faithfulness metrics (03b_baseline_characterisation.py)
+
+
+**Task:** Formally compute and report baseline saliency faithfulness metrics.
+
+**Tool:** Perplexity AI (claude.ai / Sonnet 4.6)
+
+**Prompt summary:** Asked the AI to implement the metric formulas I had defined — CbU Rate, Faithfulness Score, per-class JSER breakdown, and confidence-faithfulness Pearson correlation — and produce a paper-ready 4-panel figure.
+
+**Output summary:** The AI implemented the specified formulas and generated the figure from the existing JSON.
+
+**Accepted / rejected / modified:** Modified. The initial figure had inconsistent colour coding across panels, which was corrected. A confidence quartile breakdown was also added after the first version was found insufficient for the analysis.
+
+**Paper implication:** Results section will report the per-class faithfulness table and confidence-faithfulness scatter as evidence that baseline attention is anatomically unreliable, particularly for severe OA grades.

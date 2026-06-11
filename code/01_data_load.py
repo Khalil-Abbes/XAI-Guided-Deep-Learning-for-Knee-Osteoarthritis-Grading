@@ -1,4 +1,15 @@
-# code/01_data_load.py
+"""
+01_data_load.py
+---------------
+Downloads the Knee OA dataset from HuggingFace, extracts it, and builds
+train/val DataLoaders ready for model training.
+
+Outputs:
+  - data/kneeosteoarthritis/data/{0,1,2,3,4}/  (extracted images)
+  - Console: class distribution, split sizes, sanity check batch shape
+"""
+
+
 import zipfile
 from collections import Counter
 from pathlib import Path
