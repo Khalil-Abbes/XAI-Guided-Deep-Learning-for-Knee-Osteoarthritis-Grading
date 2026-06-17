@@ -122,3 +122,38 @@ The following metrics were selected to characterise baseline faithfulness: CbU R
 **Accepted / rejected / modified:** Modified. The initial figure had inconsistent colour coding across panels, which was corrected. A confidence quartile breakdown was also added after the first version was found insufficient for the analysis.
 
 **Paper implication:** Results section will report the per-class faithfulness table and confidence-faithfulness scatter as evidence that baseline attention is anatomically unreliable, particularly for severe OA grades.
+
+
+## KW25 - 17.06.2026
+
+### Decision: XAI-guided training loss design (script 04)
+
+I added a second loss term (JSER loss) on top of the standard classification loss to force the model to attend to the anatomical joint space (rows 105–160) during training. The combined loss is: Total = CE + 0.5 × JSER_loss, where JSER_loss = 1 − JSER. The λ=0.5 weight was chosen to balance both objectives without letting the attention penalty dominate the classification signal.
+
+Training ran for 20 epochs with batch size 64 on GPU. The total loss dropped steadily from 1.145 to 0.136, and the JSER loss collapsed to ~0.009 already by epoch 2 and stayed there, meaning the model learned to attend to the joint space very early. Val accuracy was noisy in the first few epochs but stabilised around 63–66% from epoch 6 onward, finishing at 65.98% at epoch 20.
+
+### Decision: Faithfulness evaluation (script 05)
+
+I ran Grad-CAM on all 1652 validation images using the saved XAI-guided model and measured the JSER score for each image. A prediction is flagged as Correct-but-Unfaithful (CbU) if it is correct but less than 40% of the model's attention falls inside the target region. I evaluated two regions: the H-Band (rows 105–160, full width) as the primary metric since it directly matches the region the model was trained to attend to, and a square centre crop (rows 56–168, cols 56–168) as a secondary check.
+
+On the H-Band, the CbU rate was 0.0% — every single correct prediction had its attention inside the joint space. Mean JSER on the H-Band was 0.584 compared to 0.444 for the baseline. The square crop CbU rate was 29.3%, which is expected since that region is larger and less specific than what the JSER loss directly optimised for.
+
+### Decision: Baseline vs XAI-guided comparison (script 06)
+
+I compared the baseline and XAI-guided models across accuracy, faithfulness score, CbU rate, and mean JSER. The XAI-guided model gave up only 1.5pp of accuracy (67.5% → 66.0%) in exchange for a perfect faithfulness score of 100% on the H-Band and a CbU rate of 0.0% vs 11.6% for the baseline. The per-class results were also encouraging: KL-4 had a baseline CbU rate of 68.9% which dropped to 0.0%, and accuracy actually improved for KL-1 (+2.9pp), KL-3 (+0.9pp), and KL-4 (+1.9pp).
+
+### AI Interaction - KW25 - 17.06.2026
+
+**Task:** Help organise and structure the implementation of the XAI-guided training and evaluation pipeline (scripts 04, 05, 06).
+
+**Tool:** Perplexity AI (claude.ai / Sonnet 4.6)
+
+**Prompt summary:** Asked the AI to help put together the code for a training loop combining CE loss with a JSER attention penalty, a Grad-CAM evaluation script measuring CbU rate and JSER per class, and a comparison script against the baseline.
+
+**Output summary:** The AI produced draft implementations for all three scripts. The drafts captured the general structure but required several corrections before they were usable.
+
+**Accepted / rejected / modified:** Script 04 was modified — the AI computed JSER using the pytorch-grad-cam library and wrapped the result in torch.tensor(..., requires_grad=True), which detached it from the computation graph. I identified this issue and rewrote the JSER computation as direct tensor operations on the layer4 feature map to keep it inside the graph so gradients could flow correctly. Script 05 was modified — the AI used the wrong output path for saving the Grad-CAM results JSON, which would have broken the pipeline. I caught this and corrected the path to match the expected folder structure. Script 06 was accepted as-is.
+
+**Reasoning:** The two fixes in scripts 04 and 05 were critical — without them the pipeline would not have trained or evaluated correctly. The design decisions around the dual-loss formulation, the H-Band region, the JSER threshold, and the CbU definition were all made independently.
+
+**Paper implication:** The methodology section will describe the dual-loss formulation, explain why the JSER term must stay inside the computation graph, and report the H-Band faithfulness results from scripts 05 and 06.

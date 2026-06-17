@@ -5,6 +5,7 @@
 # This automatically includes your nested folders 0-4
 /data/kneeosteoarthritis
 /data/baseline_resnet50.pth
+/data/xai_guided_resnet50.pth
 data/xai_analysis/
 data/baseline_resnet50.pth
 
