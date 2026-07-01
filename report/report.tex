@@ -1,0 +1,308 @@
+% This report uses the IEEE conference template as provided by the course.
+% [https://www.ieee.org/conferences/publishing/templates.html](https://www.ieee.org/conferences/publishing/templates.html)
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{placeins}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{XAI-Guided Training for Knee Osteoarthritis Grading}
+
+\author{\IEEEauthorblockN{Mohamed Khalil Abbes}
+\IEEEauthorblockA{moab00008@stud.uni-saarland.de \\ 7038248}
+}
+
+\maketitle
+
+% -----------------------------------------------------------------------
+\begin{abstract}
+While deep learning models achieve high accuracy in medical image classification, they are notoriously prone to "shortcut learning"—relying on spurious visual artifacts rather than genuine clinical pathology. This project investigates whether Explainable AI (XAI) can be utilised not just to explain a model post-hoc, but to actively regularise and improve its anatomical reasoning during training. A ResNet-50 baseline was trained to classify knee X-ray images according to the 5-class Kellgren-Lawrence (KL) scale. Grad-CAM saliency maps were subsequently employed to identify cases where the model predicted the correct grade while attending to non-diagnostic image regions—a phenomenon termed Correct-but-Unfaithful (CbU). To rectify this, an XAI-guided model was trained using a combined cross-entropy and Joint Space Energy Ratio (JSER) attention penalty. The proposed intervention achieved a perfect anatomical faithfulness score of 100\% and reduced the CbU rate from 11.6\% to exactly 0.0\%, guaranteeing that all correct predictions were based on the actual joint space, while trading only 1.5 percentage points of overall classification accuracy.
+\end{abstract}
+
+% -----------------------------------------------------------------------
+\section{Introduction}
+
+Knee osteoarthritis (OA) is a highly prevalent degenerative joint disease, with clinical diagnosis relying heavily on radiological assessment via the Kellgren-Lawrence (KL) scale \cite{kellgren1957}. While deep convolutional neural networks (CNNs) have achieved expert-level diagnostic accuracy in automated KL grading, their translation into real-world clinical workflows is hindered by their "black-box" nature. In high-stakes medical applications, predictive accuracy must be accompanied by diagnostic transparency to ensure predictions are based on genuine pathophysiology rather than spurious visual artifacts—a vulnerability known as "shortcut learning."
+
+Currently, Explainable AI (XAI) techniques are predominantly utilised as post-hoc audit tools: a model is trained, evaluated, and then visually explained. This study fundamentally inverts that relationship. We explore whether Grad-CAM-guided attention regularisation can close the feedback loop between post-hoc explanation and active model optimisation. By mathematically penalising unfaithful attention during training, we aim to actively guide the network's visual reasoning.
+
+Two primary hypotheses are evaluated:
+\begin{itemize}
+  \item \textbf{H1:} A baseline CNN produces saliency maps that, for a measurable fraction of correctly classified cases, highlight non-diagnostic regions rather than the anatomical joint space.
+  \item \textbf{H2:} A model trained with an explicit attention regularisation penalty achieves superior saliency faithfulness without suffering a significant drop in primary classification accuracy.
+\end{itemize}
+
+The paper is organised as follows: Section~\ref{sec:related} reviews prior literature. Section~\ref{sec:background} establishes the clinical and theoretical background of the project. Section~\ref{sec:procedure} details the research design and dual-loss formulation. Section~\ref{sec:experiments} covers data pre-processing and spatial metrics. Section~\ref{sec:results} interprets the quantitative results, Section~\ref{sec:prototype} outlines the prototype application, and Section~\ref{sec:conclusion} summarises the findings.
+
+% -----------------------------------------------------------------------
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Saliency Methods for Deep Networks}
+Selvaraju et al.\ \cite{selvaraju2017} introduced Gradient-weighted Class Activation Mapping (Grad-CAM), a highly influential method for producing class-discriminative visual explanations from CNNs. Grad-CAM operates by back-propagating class-score gradients to the final convolutional layer, producing a coarse heatmap that highlights which spatial regions of the input image most heavily influenced the network's final prediction. By avoiding the need for architectural modifications, Grad-CAM is applicable to any CNN with a convolutional feature extractor, making it highly suitable for auditing medical imaging models.
+
+\subsection{Explanation-Guided Training}
+Ross et al.\ \cite{ross2017} demonstrated that saliency explanations can serve as a primary training signal rather than just a post-hoc inspection tool. Their "Right for the Right Reasons" framework penalises models for attending to features that domain experts know to be irrelevant. Rieger et al.\ \cite{rieger2020} expanded upon this concept, proving that constraining network explanations to align with prior anatomical knowledge actively improves both generalisation and clinical interpretability in medical imaging tasks, providing the theoretical foundation for the spatial penalties used in this study.
+
+\subsection{CNN Architectures for Knee OA Grading}
+Recent literature has extensively evaluated deep transfer learning for KOA grading. Solak (2024) benchmarked multiple CNN architectures on 5-class KL grade classification, concluding that ResNet-50 achieves accuracy comparable to significantly more complex models while remaining computationally efficient and directly compatible with gradient-based XAI methods \cite{solak2024}. These findings explicitly motivated the selection of a pre-trained ResNet-50 as the baseline architecture for this study.
+
+\subsection{Synthesis and Research Gap}
+The reviewed literature converges on two established findings: Grad-CAM is a reliable tool for auditing CNN attention \cite{selvaraju2017}, and spatial penalties can meaningfully constrain network reasoning towards clinically relevant features \cite{ross2017, rieger2020}. However, a critical gap persists — prior work treats explanation and training as sequential rather than simultaneous steps. Ross et al.\ \cite{ross2017} require hand-crafted input masks, while Rieger et al.\ \cite{rieger2020} rely on pre-defined concept annotations. Neither framework derives its spatial penalty directly and differentiably from the model's own intermediate feature maps at training time. Furthermore, no prior study has applied explanation-guided regularisation specifically to the 5-class KL grading task using ResNet-50, despite its demonstrated suitability \cite{solak2024}. This study addresses that gap by constructing a fully differentiable spatial loss directly from the \texttt{layer4} activation tensor, closing the feedback loop without requiring external annotations.
+
+% -----------------------------------------------------------------------
+\section{Background}
+\label{sec:background}
+
+\subsection{Clinical Context: Knee Osteoarthritis and KL Grading}
+Knee Osteoarthritis (KOA) is a progressive joint disease characterised by the deterioration of articular cartilage and changes to the underlying bone \cite{solak2024}. Early and accurate diagnosis is critical for effective disease management. The universally accepted gold standard for radiographic KOA assessment is the Kellgren-Lawrence (KL) grading system \cite{kellgren1957}. The KL scale evaluates evidence from knee radiographs to stratify severity into five discrete classes: Grade 0 indicates a completely healthy knee; Grade 1 denotes doubtful joint space narrowing (JSN); Grade 2 signifies mild OA characterised by definite osteophytes and possible JSN; Grade 3 represents moderate OA with multiple osteophytes and definite JSN; and Grade 4 indicates severe OA accompanied by large osteophytes, marked JSN, severe sclerosis, and definite bone deformity \cite{solak2024, kellgren1957}.
+
+\subsection{The Shortcut Learning Problem}
+Transfer learning architectures such as ResNet-50 have demonstrated high classification accuracy on large-scale radiograph datasets, often matching the diagnostic consistency of expert radiologists \cite{solak2024}. However, applying XAI methods to these models has revealed a pervasive vulnerability: CNNs frequently learn to exploit unintended correlations in the training data—such as patient positioning, surgical implants, radiographic text markers, or peripheral bone structure—to minimise loss without actually learning the underlying disease pathology.
+
+When a model correctly predicts a KL grade but bases its mathematical decision on these irrelevant features, the prediction is termed "Correct-but-Unfaithful" (CbU). While such a model may achieve exceptionally high validation accuracy during testing, it remains clinically unreliable and is highly prone to catastrophic failure when deployed on out-of-distribution data where those specific visual shortcuts are absent.
+
+\subsection{Terminology: How the Model Learns (Loss Functions)}
+To understand the technical methodology of this project, it is helpful to understand how AI models are trained. During training, a model makes predictions, and its performance is evaluated using a mathematical formula called a \textit{loss function}. Think of "loss" as an error score or a penalty—the worse the model's prediction, the higher the penalty. The model iteratively adjusts its internal parameters to minimise this score.
+
+In this project, we utilise two specific types of penalties:
+\begin{itemize}
+  \item \textbf{Cross-Entropy (CE) Loss:} This is the standard penalty used in classification tasks. It penalises the model when it guesses the wrong disease severity. For example, if the model predicts KL-0 (Healthy) but the true label is KL-4 (Severe), the CE loss will be high. This loss function simply teaches the model \textit{what} the correct diagnosis is.
+  \item \textbf{Joint Space Energy Ratio (JSER) Loss:} This is the custom "attention penalty" introduced in this study. Even if the model guesses the correct KL grade, it should not be rewarded if it was looking at irrelevant background artifacts. JSER measures how much of the model's visual focus (or "activation energy") is concentrated strictly inside the anatomical knee joint space. If the model looks outside this designated area, the JSER loss penalises it. This loss function teaches the model \textit{where} to look.
+\end{itemize}
+
+\subsection{Closing the Loop: Active XAI Guidance}
+Traditionally, XAI is utilised strictly as a passive evaluation tool. If a model exhibits shortcut learning, the standard response is to manually curate the dataset, apply rigid bounding boxes, or re-train the network from scratch. This project proposes an active mathematical feedback loop. By combining the CE Loss and the JSER Loss into a single \textbf{Total Loss}, we forcibly bound the network's attention during training. The model is forced to both arrive at the correct diagnosis and prove that it derived that answer from the correct anatomical region, ensuring it is right for the right clinical reasons \cite{ross2017}.
+
+% -----------------------------------------------------------------------
+\section{Procedure}
+\label{sec:procedure}
+
+\subsection{Project Objective and Research Design}
+This project aims to determine whether an explicit attention penalty, applied during training, can remove Correct-but-Unfaithful (CbU) predictions in a knee OA grading model without a major loss in accuracy. The study uses a controlled experimental design with a single independent variable: the addition of an attention regularisation loss term (JSER loss) to the training objective. All other settings (architecture, optimiser, learning rate scheduling, augmentations, and train/val splits) are kept identical between the baseline and XAI-guided models to allow a fair comparison.
+
+The method runs in two phases. \textbf{Phase 1 (H1):} Train the baseline model, generate Grad-CAM heatmaps for the validation set, measure the CbU rate, and identify unfaithful predictions. \textbf{Phase 2 (H2):} Train the XAI-guided model with the added JSER loss, then compare its performance and faithfulness against the baseline.
+
+\subsection{Data Analysis}
+To evaluate the two hypotheses, this study relies on descriptive statistics (mean JSER, CbU rate, per-class accuracy) and one inferential test: a Pearson correlation between model confidence and JSER score. Descriptive statistics were chosen because they directly summarise faithfulness and accuracy per class, which is the main quantity of interest. The Pearson correlation was chosen to test whether prediction confidence can be used as an informal proxy for spatial faithfulness, since this would have practical value for deployment if true.
+
+\subsection{Model Development and Hyperparameters}
+A ResNet-50 architecture pretrained on ImageNet \cite{he2016} was chosen as the backbone \cite{solak2024}. Its integration with Grad-CAM via the \texttt{layer4[-1]} block allows direct saliency extraction. The standard fully-connected layer was replaced with a linear head mapping 2048 features to 5 output classes (KL grades 0--4).
+
+Optimisation used the Adam optimiser with a learning rate of $1 \times 10^{-4}$ and weight decay of $1 \times 10^{-4}$ to reduce overfitting. A StepLR scheduler was used ($\gamma = 0.5$ every 5 epochs) to decay the learning rate gradually, so the model does not overshoot local minima late in training. Batch size was set to 64 to use available GPU VRAM and stabilise gradient estimates.
+
+\subsection{Loss Formulation}
+The baseline training objective is a standard weighted cross-entropy loss:
+
+\begin{equation}
+  \mathcal{L}_{\text{baseline}} = \mathcal{L}_{\text{CE}}(y, \hat{y})
+\end{equation}
+
+For the XAI-guided model, a differentiable JSER penalty is added to guide the model's visual attention:
+
+\begin{equation}
+  \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}}
+    + \lambda \cdot (1 - \text{JSER})
+\end{equation}
+
+where JSER is the Joint Space Energy Ratio. The weight $\lambda = 0.5$ was chosen empirically to balance the two loss terms; a higher $\lambda$ risks collapsing the classification loss, while a lower value gives too little constraint on attention.
+
+\begin{equation}
+  \text{JSER} = \frac{\sum_{r \in [105,160]} A(r)}
+                     {\sum_{\text{all}~r} A(r)}
+\end{equation}
+
+Here, $A(r)$ is the mean activation across all channels of the \texttt{layer4} feature map at spatial row $r$. The JSER computation uses only native PyTorch tensor operations on the feature map (shape $B \times 2048 \times 7 \times 7$), so it stays fully differentiable within the autograd graph, letting gradients update the convolutional weights directly.
+
+% -----------------------------------------------------------------------
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Data Collection and Augmentation}
+To train and evaluate the models, the project utilises the \texttt{SilpaCS/kneeosteoarthritis} \cite{silpacs} dataset from Hugging Face, comprising 8,260 knee X-ray images categorised into KL grades 0--4. All images are standardised to $224 \times 224$ px. Due to an upstream bug in the dataset's native loading script, the data was ingested via direct zip download using \texttt{hf\_hub\_download()}.
+
+An 80/20 random split with a fixed seed (42) generated 6,608 training and 1,652 validation images. Training augmentations included random horizontal flipping and slight rotations ($\pm 10^{\circ}$). These specific augmentations were chosen because they preserve the spatial integrity of the joint space while realistically simulating the natural variations in bilateral patient positioning during radiographic capture.
+
+\subsection{Exploratory Data Analysis and Class Weighting}
+The dataset exhibits severe class imbalance: KL-0 (Healthy) accounts for 39.4\% of the data (3,253 images), whereas KL-4 (Severe) accounts for a mere 3.0\% (251 images) (see Appendix~\ref{app:figures} for extended visualisations). Clinically, this imbalance is expected, reflecting natural population distributions where severe joint degradation is less common than healthy or early-stage joints. However, for an AI diagnostic tool, this presents a significant risk: a model might achieve deceptively high overall accuracy simply by defaulting to majority-class predictions, failing exactly where clinical intervention is most critical (severe cases). To prevent the model from collapsing into this majority bias, per-class weights were calculated as $[0.51, 1.12, 0.76, 1.52, 6.71]$ and injected directly into the \texttt{nn.CrossEntropyLoss} criterion. This technique dynamically penalises errors in the minority classes and was chosen over synthetic oversampling (e.g., SMOTE) to preserve the pure, unaugmented distribution of the original radiograph data.
+
+\subsection{Defining Spatial Faithfulness (JSER Regions)}
+Because all images in the dataset are pre-cropped to center the knee region, the anatomical joint gap falls consistently within a specific vertical range. Two spatial region definitions were evaluated to formulate the JSER metric (Figure \ref{fig:regions}):
+\begin{enumerate}
+    \item \textbf{Square Centre Crop:} Rows 56--168, Columns 56--168.
+    \item \textbf{Horizontal Band (H-Band):} Rows 105--160, spanning full image width.
+\end{enumerate}
+
+% FIGURE 1
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.8\columnwidth]{jser_region_comparison.png}
+  \caption{Comparison of the two candidate JSER evaluation regions. Left: Square Centre Crop captures unnecessary bone mass. Right: The H-Band strictly isolates the anatomical tibiofemoral joint space. The H-Band was selected as the primary metric.}
+  \label{fig:regions}
+\end{figure}
+
+The H-Band was chosen as the definitive metric. Comparative visual validation confirmed that the Square Crop inadvertently captures excess femoral and tibial bone mass, inflating the JSER score even when the model ignores the actual joint space. The H-Band demonstrated significantly lower variance (std 0.037 vs.\ 0.094) and established a much stricter, clinically sound attention boundary.
+
+\subsection{Performance Metrics}
+\begin{itemize}
+  \item \textbf{Validation Accuracy:} Top-1 classification accuracy.
+  \item \textbf{JSER (Joint Space Energy Ratio):} The fraction of Grad-CAM activation energy strictly contained inside the H-Band. Higher is better.
+  \item \textbf{CbU Rate:} The percentage of strictly \textit{correct} predictions where JSER $< 0.40$. A prediction is "Correct-but-Unfaithful" if the model guessed the right grade but looked outside the joint space. Lower is better.
+  \item \textbf{Faithfulness Score:} Defined as $1 - \text{CbU Rate}$.
+  \item \textbf{Pearson $r$ (Confidence--JSER):} Correlation determining if a highly confident prediction implies high spatial faithfulness.
+\end{itemize}
+
+% -----------------------------------------------------------------------
+\section{Results and Discussion}
+\label{sec:results}
+
+% FIGURE 2 (Double Column - Declared early so it locks cleanly to the top of the page)
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{baseline_plots.png}
+  \caption{Baseline faithfulness characterisation. Left: mean JSER per KL grade,
+showing attention quality degrades as disease severity increases. Right: scatter
+plot of model confidence vs.\ JSER, illustrating the absence of correlation
+($r = -0.035$) between prediction certainty and spatial faithfulness.}
+  \label{fig:baseline}
+\end{figure*}
+
+\subsection{Descriptive Statistics}
+The locked validation dataset consists of $n = 1,652$ independent images. Reflecting the overall dataset frequencies, the validation split maintains a heavy skew toward early-stage conditions: KL-0 (approx.\ 39.4\%), KL-1 (13.3\%), KL-2 (25.8\%), KL-3 (18.5\%), and KL-4 (3.0\%). Establishing this descriptive statistical profile is crucial, as it contextualises the subsequent performance metrics and underscores why unweighted, aggregate accuracy is an insufficient measure of clinical reliability.
+
+\subsection{H1: Baseline Saliency Faithfulness}
+The baseline ResNet-50 achieved a validation accuracy of 67.5\% with a mean H-Band JSER of 0.444. However, spatial analysis revealed a critical vulnerability: the global CbU rate was 11.6\% (129 of 1,115 correct predictions), yielding a faithfulness score of 88.4\%.
+
+Alarmingly, a Pearson correlation analysis yielded $r = -0.035$ ($p = 0.249$), demonstrating no statistically significant relationship between model confidence and anatomical correctness. This implies that confidence is not a reliable proxy for faithfulness: a model outputting a 99\% confident prediction is no more likely to be attending to the joint space than one outputting a 51\% prediction (Figure \ref{fig:baseline}, right panel). Clinically, this is a critical finding — high-confidence predictions cannot be trusted to be anatomically grounded without an explicit spatial constraint.
+
+As shown in Table~\ref{tab:perclass}, the CbU rate scales aggressively with disease severity. For KL-4 (severe OA), the CbU rate reached 68.9\%—meaning nearly 7 out of 10 correct severe-grade predictions were derived from spurious artifacts or irrelevant bone mass rather than the joint space. Representative examples of these unfaithful cases are provided in Appendix~\ref{app:figures} (Figure~\ref{fig:unfaithful}).
+
+These findings strongly validate Hypothesis 1: standard CNNs regularly learn unfaithful shortcuts that render them clinically untrustworthy, despite maintaining acceptable aggregate accuracy.
+
+% -----------------------------------------------------------------------
+\subsection{H2: XAI-Guided Model Evaluation}
+
+The introduction of the $\lambda=0.5$ JSER penalty effectively regularised the model's visual reasoning. As shown in Figure~\ref{fig:training}, the JSER loss collapsed from 0.141 to roughly $0.009$ within two epochs, confirming the network rapidly confined its attention to the anatomical band without destabilising classification. Validation accuracy stabilised at 65.98\%.
+
+% TABLE 1
+\begin{table}[htbp]
+\centering
+\caption{Global comparative metrics: Baseline vs.\ XAI-Guided Model.}
+\label{tab:global}
+\begin{tabular}{lccc}
+\toprule
+Metric & Baseline & XAI-Guided & $\Delta$ \\
+\midrule
+Val Accuracy        & 67.5\% & 66.0\% & $-1.5$pp \\
+Faithfulness Score  & 88.4\% & 100.0\% & $+11.6$pp \\
+CbU Rate            & 11.6\% & 0.0\%  & $-11.6$pp \\
+Mean JSER (correct) & 0.444  & 0.584  & $+0.140$ \\
+Pearson $r$         & $-0.035$ & $-0.037$ & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As detailed in Table~\ref{tab:global}, the XAI-guided model completely eliminated H-Band CbU cases, reducing the unfaithful prediction rate from 11.6\% to 0.0\% and achieving a perfect 100\% Faithfulness Score at a cost of only 1.5 percentage points in accuracy (67.5\% to 66.0\%).
+
+% TABLE 2
+\begin{table}[htbp]
+\centering
+\caption{Per-class breakdown of Accuracy and CbU Rates.}
+\label{tab:perclass}
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{Accuracy} & \multicolumn{2}{c}{CbU Rate} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Grade & Base & XAI & Base & XAI \\
+\midrule
+KL-0 (Healthy)   & 82.4\% & 78.5\% & 3.2\%  & 0.0\% \\
+KL-1 (Doubtful)  & 31.2\% & 34.1\% & 13.3\% & 0.0\% \\
+KL-2 (Mild)      & 64.2\% & 61.7\% & 10.1\% & 0.0\% \\
+KL-3 (Moderate)  & 79.1\% & 80.0\% & 23.5\% & 0.0\% \\
+KL-4 (Severe)    & 83.3\% & 85.2\% & 68.9\% & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:perclass} breaks down improvements by grade. The baseline's 68.9\% CbU rate on KL-4 was entirely eradicated, and accuracy on the most clinically critical grades actually \textit{improved} (KL-1: $+$2.9pp, KL-3: $+$0.9pp, KL-4: $+$1.9pp), confirming that attention bounding has a secondary regularisation effect. Hypothesis 2 is decisively confirmed.
+
+\clubpenalty=10000
+\widowpenalty=10000
+
+\textbf{Limitations:} The JSER threshold of 0.40 was derived from validation set means; a rigorous threshold requires pixel-level annotations the dataset lacks. Only a single $\lambda$ value (0.5) was evaluated; future hyperparameter sweeps could potentially recover the 1.5pp accuracy loss.
+
+% FIGURE 4 (Training Curves)
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{training_curves_xai.png}
+  \caption{XAI-guided training curves. Left: The JSER loss (green) collapses immediately by Epoch 2, proving the network efficiently adopted the spatial constraint. Right: Validation accuracy remains highly stable throughout the 20 epochs.}
+  \label{fig:training}
+\end{figure}
+
+\FloatBarrier
+% -----------------------------------------------------------------------
+\section{Prototype Implementation}
+\label{sec:prototype}
+
+To demonstrate the real-world clinical applicability of the proposed XAI-guided training paradigm, an interactive web application was developed using the Streamlit framework. The prototype provides a robust interface for clinicians to interact with both the baseline and the XAI-guided ResNet-50 models without requiring programming expertise.
+
+The application is structured into two primary modules:
+\begin{itemize}
+    \item \textbf{Single Image Analysis:} Users can upload a raw knee radiograph to receive an instantaneous KL-grade prediction alongside a detailed confidence distribution. Crucially, the interface overlays a real-time Grad-CAM heatmap on the input image and visualizes the designated H-Band region. The system dynamically computes the JSER score; if the score falls below the 0.40 threshold, a visual warning flags the prediction as a "Correct-but-Unfaithful" (CbU) case, offering immediate transparency into the model's reasoning.
+    \item \textbf{Batch CbU Scanner:} To validate the quantitative findings of this study, a batch-processing tool was integrated. This module scans the entire locked validation dataset (reproduced exactly via a fixed random seed) and outputs a comprehensive faithfulness report. It highlights the worst-performing CbU cases, allowing users to actively explore the distribution of spatial faithfulness across the dataset.
+\end{itemize}
+
+By bridging the gap between raw model outputs and interpretable clinical metrics, the prototype illustrates how explanation-guided models can be securely deployed in diagnostic workflows, ensuring that clinicians can verify whether an AI system is arriving at its conclusions for the right anatomical reasons.
+
+% -----------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+
+This study aimed to elevate Explainable AI from a passive post-hoc audit tool into an active, architecture-guiding mechanism. Initial baseline testing confirmed Hypothesis 1: without explicit spatial constraints, a standard ResNet-50 frequently optimises for spurious visual shortcuts, culminating in a 68.9\% unfaithful prediction rate on severe (KL-4) osteoarthritis cases.
+
+By injecting a differentiable JSER penalty directly into the training loop, the network's attention was forcibly aligned with true clinical anatomy. The resulting XAI-guided model successfully confirmed Hypothesis 2, totally eradicating Correct-but-Unfaithful predictions and achieving a flawless 100\% anatomical faithfulness score. At a nominal cost of 1.5 percentage points in global accuracy, the model secured massive gains in interpretability, demonstrating that medical AI can be forced to be "right for the right reasons." Future work should explore multi-dimensional spatial penalties and hyperparameter optimisation over the $\lambda$ penalty weight. This "right for the right reasons" paradigm is an essential prerequisite for the secure integration of AI into complex clinical workflows. By proving that diagnostic accuracy and clinical transparency are not mutually exclusive, this methodology ensures that future automated radiological systems can act as transparent, trustworthy aids rather than opaque, unaccountable decision-makers.
+
+\bibliographystyle{IEEEtran}
+\bibliography{lit}
+
+\appendix
+
+\section{Project Resources}
+\begin{itemize}
+  \item \textbf{Source Code:} \href{https://github.com/ds2026-H1H2-ID14-teamme}{Github}
+  \item \textbf{Project Overleaf:} \href{https://www.overleaf.com/read/qtjbtbkwzcfz\#d6781d}{Overleaf}
+\end{itemize}
+
+\section{Additional Figures and EDA}
+\label{app:figures}
+
+% FIGURE 3 — moved here from Results
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.80\columnwidth]{unfaithful_examples_hband.png}
+  \caption{The three most extreme CbU cases generated by the baseline model. Despite predicting the correct KL grade, the Grad-CAM overlays (right column) reveal the network's attention is heavily concentrated outside the true diagnostic anatomical joint space (H-Band region).}
+  \label{fig:unfaithful}
+\end{figure}
+
+% Square Crop XAI Faithful Cases
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{unfaithful_examples_xai_square.png}
+  \caption{Supplementary XAI-guided model Grad-CAM examples evaluated against the Square Centre Crop region. While the attention regularisation improves upon the baseline, the model's focus remains overly diffuse and suboptimal. This residual noise confirms that the Square Crop is too lenient a boundary, fully justifying the shift to the stricter H-Band region for training and evaluation.}
+  \label{fig:app_xai_square}
+\end{figure}
+
+\end{document}

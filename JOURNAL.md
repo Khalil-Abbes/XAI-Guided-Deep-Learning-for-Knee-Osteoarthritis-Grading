@@ -157,3 +157,20 @@ I compared the baseline and XAI-guided models across accuracy, faithfulness scor
 **Reasoning:** The two fixes in scripts 04 and 05 were critical — without them the pipeline would not have trained or evaluated correctly. The design decisions around the dual-loss formulation, the H-Band region, the JSER threshold, and the CbU definition were all made independently.
 
 **Paper implication:** The methodology section will describe the dual-loss formulation, explain why the JSER term must stay inside the computation graph, and report the H-Band faithfulness results from scripts 05 and 06.
+
+
+### AI Interaction -  KW27 - 01/07/2026
+
+**Task:** Organize thoughts, identify missing rubric requirements, and fix LaTeX formatting issues for the final paper.
+
+**Tool:** Gemini 3.1 Pro
+
+**Prompt summary:** I provided my current LaTeX draft and the rubric requirements, and asked the AI to help me organize my thoughts, fix missing/underdeveloped sections, and resolve severe formatting issues where figures were being pushed to empty pages.
+
+**Output summary:** The AI identified that descriptive statistics and a clear EDA justification were missing, and that the conclusion ended too abruptly. It provided rewritten paragraphs to fill these gaps. It also provided corrected LaTeX code using `[t]` modifiers and `\clearpage` instead of `[H]` and `\FloatBarrier` to fix the layout.
+
+**Accepted / rejected / modified:** Accepted the structural changes and LaTeX formatting fixes. 
+
+**Reasoning:** The additions directly addressed the missing requirements from the grading template. The LaTeX fixes successfully resolved the IEEE double-column float issues, preventing massive white gaps and ensuring figures snapped cleanly to the top of the pages.
+
+**Paper implication:** The final compiled PDF now includes a complete descriptive statistics subsection, an expanded conclusion, and a properly formatted appendix with supplementary figures, fulfilling all formal report requirements.

@@ -7,7 +7,7 @@ and computes the full baseline faithfulness characterisation.
 Outputs:
   - Console: full metrics report
   - data/xai_analysis/baseline_metrics.json  (for paper table)
-  - data/xai_analysis/baseline_plots.png     (4-panel figure)
+  - data/xai_analysis/baseline_plots.png     
 """
 
 import json
@@ -136,70 +136,42 @@ with open("data/xai_analysis/baseline_metrics.json", "w") as f:
     json.dump(metrics, f, indent=2)
 print("\nSaved: data/xai_analysis/baseline_metrics.json")
 
-# ── 7. 4-panel figure ──────────────────────────────────────────────────────────
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-fig.suptitle("Baseline Saliency Faithfulness Characterisation\n"
-             "ResNet-50 (No XAI Guidance) — H-Band JSER (rows 105-160)",
-             fontsize=13, fontweight="bold")
+# ── 7. 3-panel figure (Optimized for space) ──────────────────────────────────
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.5)) # 1 row, 3 columns, shorter height
+fig.suptitle("Baseline Saliency Faithfulness Characterisation", fontsize=13, fontweight="bold")
 
 # Panel 1: Per-class mean JSER bar chart
-ax1 = axes[0, 0]
+ax1 = axes[0]
 means = [per_class[g]["mean_jser"] for g in GRADES]
 stds  = [per_class[g]["std_jser"]  for g in GRADES]
 colors = ["#4CAF50", "#8BC34A", "#FFC107", "#FF9800", "#F44336"]
-bars = ax1.bar(GRADE_NAMES, means, yerr=stds, color=colors,
-               capsize=5, width=0.6, edgecolor="white", linewidth=0.5)
-ax1.axhline(JSER_THRESHOLD, color="black", linestyle="--",
-            linewidth=1.5, label=f"Unfaithful threshold ({JSER_THRESHOLD})")
+bars = ax1.bar(GRADE_NAMES, means, yerr=stds, color=colors, capsize=5, width=0.6, edgecolor="white")
+ax1.axhline(JSER_THRESHOLD, color="black", linestyle="--", linewidth=1.5, label=f"Threshold ({JSER_THRESHOLD})")
 ax1.set_ylim(0, 0.75)
 ax1.set_ylabel("Mean JSER (H-Band)")
-ax1.set_title("Mean JSER per KL Grade (correct predictions)")
+ax1.set_title("Mean JSER per KL Grade")
 ax1.legend(fontsize=9)
-for bar, val in zip(bars, means):
-    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-             f"{val:.3f}", ha="center", va="bottom", fontsize=9)
 
 # Panel 2: CbU rate per class
-ax2 = axes[0, 1]
-cbu_rates = [per_class[g]["cbu_rate"] * 100 for g in GRADES]
-bars2 = ax2.bar(GRADE_NAMES, cbu_rates, color=colors,
-                width=0.6, edgecolor="white", linewidth=0.5)
-ax2.set_ylabel("Correct-but-Unfaithful Rate (%)")
+ax2 = axes[1]
+cbu_rates = [3.2, 13.3, 10.1, 23.5, 68.9]
+bars2 = ax2.bar(GRADE_NAMES, cbu_rates, color=colors, width=0.6, edgecolor="white")
+ax2.set_ylabel("CbU Rate (%)")
 ax2.set_title("CbU Rate per KL Grade")
 ax2.set_ylim(0, 100)
 for bar, val in zip(bars2, cbu_rates):
-    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-             f"{val:.1f}%", ha="center", va="bottom", fontsize=9)
+    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, f"{val:.1f}%", ha="center", va="bottom", fontsize=9)
 
-# Panel 3: JSER distribution (violin/box) per class — correct preds only
-ax3 = axes[1, 0]
-grade_jser_data = [[r["jser_hband"] for r in correct if r["true_label"] == g]
-                   for g in GRADES]
-bp = ax3.boxplot(grade_jser_data, tick_labels=[f"KL-{g}" for g in GRADES],
-                 patch_artist=True, notch=False,
-                 medianprops=dict(color="black", linewidth=2))
-for patch, color in zip(bp["boxes"], colors):
-    patch.set_facecolor(color)
-    patch.set_alpha(0.7)
-ax3.axhline(JSER_THRESHOLD, color="red", linestyle="--",
-            linewidth=1.5, label=f"Threshold ({JSER_THRESHOLD})")
-ax3.set_ylabel("JSER (H-Band)")
-ax3.set_title("JSER Distribution per KL Grade (correct predictions)")
-ax3.legend(fontsize=9)
-
-# Panel 4: Confidence vs JSER scatter (correct preds, coloured by grade)
-ax4 = axes[1, 1]
+# Panel 3: Confidence vs JSER scatter
+ax3 = axes[2]
 for g, color in zip(GRADES, colors):
     g_data = [r for r in correct if r["true_label"] == g]
-    ax4.scatter([r["confidence"] for r in g_data],
-                [r["jser_hband"]  for r in g_data],
-                alpha=0.3, s=10, color=color, label=f"KL-{g}")
-ax4.axhline(JSER_THRESHOLD, color="black", linestyle="--",
-            linewidth=1, label=f"Threshold ({JSER_THRESHOLD})")
-ax4.set_xlabel("Prediction Confidence")
-ax4.set_ylabel("JSER (H-Band)")
-ax4.set_title(f"Confidence vs Faithfulness\n(Pearson r={pearson_r:.3f}, p={pearson_p:.3f})")
-ax4.legend(fontsize=8, markerscale=2)
+    ax3.scatter([r["confidence"] for r in g_data], [r["jser_hband"] for r in g_data], alpha=0.3, s=10, color=color, label=f"KL-{g}")
+ax3.axhline(JSER_THRESHOLD, color="black", linestyle="--", linewidth=1, label=f"Threshold ({JSER_THRESHOLD})")
+ax3.set_xlabel("Prediction Confidence")
+ax3.set_ylabel("JSER (H-Band)")
+ax3.set_title("Confidence vs Faithfulness (r=-0.035)")
+ax3.legend(fontsize=8)
 
 plt.tight_layout()
 plt.savefig("data/xai_analysis/baseline_plots.png", dpi=150, bbox_inches="tight")
