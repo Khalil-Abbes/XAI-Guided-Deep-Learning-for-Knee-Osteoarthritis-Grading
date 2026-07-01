@@ -2,7 +2,13 @@
 
 A Data Science mini-project that investigates whether Explainable AI (XAI) can be used not just to explain a model after training, but to actively improve its diagnostic reasoning during training. A ResNet-50 is trained to classify knee X-rays by Kellgren-Lawrence (KL) severity grade, with a custom attention penalty that forces the network to focus on the correct anatomical region — the knee joint space — rather than irrelevant image artifacts.
 
----
+
+
+## Group Members
+
+Mohamed Khalil Abbes
+
+
 
 ## Research Questions
 
@@ -35,9 +41,11 @@ A Data Science mini-project that investigates whether Explainable AI (XAI) can b
 
 ---
 
-## Prototype
+## Interactive Prototype
 
-An interactive Streamlit app allows users to upload a knee X-ray and receive a KL-grade prediction with a live Grad-CAM heatmap, JSER score, and a CbU warning if the model's attention falls outside the joint space. A batch scanner is also included to audit the full validation set for faithfulness.
+An interactive Streamlit app built on top of the trained model. Once trained, the model can be applied to any knee X-ray in a similar format to the training dataset (frontal AP view, knee region centered). Users upload an image and receive a KL-grade prediction, a live Grad-CAM heatmap, a JSER score, and a CbU warning if the model's attention falls outside the joint space. A batch scanner is also included to audit the full validation set for faithfulness. 
+
+**To run:** `streamlit run .\code\app.py`
 
 ---
 
